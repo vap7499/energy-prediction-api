@@ -25,10 +25,7 @@ def get_iam_token():
 
 
 def extract_prediction(result):
-    try:
-        return result["predictions"][0]["values"][0][0]
-    except Exception:
-        return result
+    return result["predictions"][0]["values"][0][0]
 
 
 def call_watson_model(scoring_url, fields, values):
@@ -54,24 +51,10 @@ def call_watson_model(scoring_url, fields, values):
         timeout=30
     )
 
-    try:
-        response.raise_for_status()
-        result = response.json()
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "watson_status": response.status_code,
-            "watson_response": response.text,
-            "payload_sent": payload
-        }
+    response.raise_for_status()
+    result = response.json()
 
-    return {
-        "success": True,
-        "raw_result": result,
-        "predicted_energy": extract_prediction(result),
-        "payload_sent": payload
-    }
+    return extract_prediction(result)
 
 
 @app.route("/", methods=["GET"])
@@ -100,20 +83,17 @@ def predict_energy_simple():
             data["Cooling_Time"]
         ]
 
-        result = call_watson_model(
+        prediction = call_watson_model(
             SIMPLE_SCORING_URL,
             fields,
             values
         )
 
-        if result["success"]:
-            return jsonify({
-                "prediction_type": "simple",
-                "predicted_energy": result["predicted_energy"],
-                "watson_raw_result": result["raw_result"]
-            })
-
-        return jsonify(result), 500
+        return jsonify({
+            "message": f"Predicted Energy Consumption: {round(prediction, 2)} kWh",
+            "prediction_type": "simple",
+            "predicted_energy": prediction
+        })
 
     except Exception as e:
         return jsonify({
@@ -150,20 +130,17 @@ def predict_energy_advanced():
             data["Fill_Speed"]
         ]
 
-        result = call_watson_model(
+        prediction = call_watson_model(
             ADVANCED_SCORING_URL,
             fields,
             values
         )
 
-        if result["success"]:
-            return jsonify({
-                "prediction_type": "advanced",
-                "predicted_energy": result["predicted_energy"],
-                "watson_raw_result": result["raw_result"]
-            })
-
-        return jsonify(result), 500
+        return jsonify({
+            "message": f"Predicted Energy Consumption: {round(prediction, 2)} kWh",
+            "prediction_type": "advanced",
+            "predicted_energy": prediction
+        })
 
     except Exception as e:
         return jsonify({
