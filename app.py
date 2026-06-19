@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 import requests
 import os
+import traceback
 
 app = Flask(__name__)
 
@@ -21,6 +22,13 @@ def get_iam_token():
     )
     response.raise_for_status()
     return response.json()["access_token"]
+
+
+def extract_prediction(result):
+    try:
+        return result["predictions"][0]["values"][0][0]
+    except Exception:
+        return result
 
 
 def call_watson_model(scoring_url, fields, values):
@@ -46,12 +54,24 @@ def call_watson_model(scoring_url, fields, values):
         timeout=30
     )
 
-    response.raise_for_status()
-    result = response.json()
+    try:
+        response.raise_for_status()
+        result = response.json()
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "watson_status": response.status_code,
+            "watson_response": response.text,
+            "payload_sent": payload
+        }
 
-    prediction = result["predictions"][0]["values"][0][0]
-
-    return prediction
+    return {
+        "success": True,
+        "raw_result": result,
+        "predicted_energy": extract_prediction(result),
+        "payload_sent": payload
+    }
 
 
 @app.route("/", methods=["GET"])
@@ -61,72 +81,96 @@ def home():
 
 @app.route("/predict-energy-simple", methods=["POST"])
 def predict_energy_simple():
-    data = request.json
+    try:
+        data = request.json
 
-    fields = [
-        "Batch",
-        "Production Quantity",
-        "Screw Speed",
-        "Melt Pressure",
-        "Cooling Time"
-    ]
+        fields = [
+            "Batch",
+            "Production Quantity",
+            "Screw Speed",
+            "Melt Pressure",
+            "Cooling Time"
+        ]
 
-    values = [
-        "BATCH_001",
-        data["Production_Quantity"],
-        data["Screw_Speed"],
-        data["Melt_Pressure"],
-        data["Cooling_Time"]
-    ]
+        values = [
+            "BATCH_001",
+            data["Production_Quantity"],
+            data["Screw_Speed"],
+            data["Melt_Pressure"],
+            data["Cooling_Time"]
+        ]
 
-    prediction = call_watson_model(
-        SIMPLE_SCORING_URL,
-        fields,
-        values
-    )
+        result = call_watson_model(
+            SIMPLE_SCORING_URL,
+            fields,
+            values
+        )
 
-    return jsonify({
-        "prediction_type": "simple",
-        "predicted_energy": prediction
-    })
+        if result["success"]:
+            return jsonify({
+                "prediction_type": "simple",
+                "predicted_energy": result["predicted_energy"],
+                "watson_raw_result": result["raw_result"]
+            })
+
+        return jsonify(result), 500
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
 
 
 @app.route("/predict-energy-advanced", methods=["POST"])
 def predict_energy_advanced():
-    data = request.json
+    try:
+        data = request.json
 
-    fields = [
-        "Batch",
-        "Production Quantity",
-        "Screw Speed",
-        "Melt Pressure",
-        "Cooling Time",
-        "Seal Temperature",
-        "Barrel Temperature",
-        "Fill Speed"
-    ]
+        fields = [
+            "Batch",
+            "Production Quantity",
+            "Screw Speed",
+            "Melt Pressure",
+            "Cooling Time",
+            "Seal Temperature",
+            "Barrel Temperature",
+            "Fill Speed"
+        ]
 
-    values = [
-        "BATCH_001",
-        data["Production_Quantity"],
-        data["Screw_Speed"],
-        data["Melt_Pressure"],
-        data["Cooling_Time"],
-        data["Seal_Temperature"],
-        data["Barrel_Temperature"],
-        data["Fill_Speed"]
-    ]
+        values = [
+            "BATCH_001",
+            data["Production_Quantity"],
+            data["Screw_Speed"],
+            data["Melt_Pressure"],
+            data["Cooling_Time"],
+            data["Seal_Temperature"],
+            data["Barrel_Temperature"],
+            data["Fill_Speed"]
+        ]
 
-    prediction = call_watson_model(
-        ADVANCED_SCORING_URL,
-        fields,
-        values
-    )
+        result = call_watson_model(
+            ADVANCED_SCORING_URL,
+            fields,
+            values
+        )
 
-    return jsonify({
-        "prediction_type": "advanced",
-        "predicted_energy": prediction
-    })
+        if result["success"]:
+            return jsonify({
+                "prediction_type": "advanced",
+                "predicted_energy": result["predicted_energy"],
+                "watson_raw_result": result["raw_result"]
+            })
+
+        return jsonify(result), 500
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
 
 
 if __name__ == "__main__":
